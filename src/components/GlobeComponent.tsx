@@ -1,0 +1,165 @@
+import React, { useEffect, useRef, useState } from 'react';
+import Globe from 'react-globe.gl';
+import { places, routes } from '../data/mockData';
+
+interface GlobeComponentProps {
+  autoRotate: boolean;
+  showRoutes: boolean;
+}
+
+export function GlobeComponent({ autoRotate, showRoutes }: GlobeComponentProps) {
+  const globeEl = useRef<any>();
+  const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [countries, setCountries] = useState<any>({ features: [] });
+  const [hoverD, setHoverD] = useState<any>();
+
+  useEffect(() => {
+    const handleResize = () => {
+      setDimensions({ width: window.innerWidth, height: window.innerHeight });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const getPolygonCenter = (polygon: any) => {
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    
+    const extractCoords = (coords: any[]) => {
+      coords.forEach(coord => {
+        if (typeof coord[0] === 'number') {
+          minLng = Math.min(minLng, coord[0]);
+          maxLng = Math.max(maxLng, coord[0]);
+          minLat = Math.min(minLat, coord[1]);
+          maxLat = Math.max(maxLat, coord[1]);
+        } else {
+          extractCoords(coord);
+        }
+      });
+    };
+    
+    if (polygon.geometry && polygon.geometry.coordinates) {
+      extractCoords(polygon.geometry.coordinates);
+    }
+    
+    return {
+      lat: (minLat + maxLat) / 2,
+      lng: (minLng + maxLng) / 2,
+      lonSpan: maxLng - minLng
+    };
+  };
+
+  useEffect(() => {
+    // Load high-quality GeoJSON for administrative regions (states/provinces)
+    fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson')
+      .then(res => res.json())
+      .then(statesData => {
+        const filteredStates = statesData.features.filter(
+          (d: any) => {
+            const center = getPolygonCenter(d);
+            // Filter out regions that span too much to avoid rendering glitches
+            return d.properties.admin !== 'Antarctica' &&
+                   center.lonSpan < 300;
+          }
+        ).map((f: any) => ({ ...f, isState: true }));
+        
+        setCountries({
+          features: filteredStates
+        });
+      });
+  }, []);
+
+  useEffect(() => {
+    if (globeEl.current) {
+      const controls = globeEl.current.controls();
+      controls.autoRotate = autoRotate;
+      controls.autoRotateSpeed = 0.5;
+      controls.enableZoom = true;
+    }
+  }, [autoRotate]);
+
+  useEffect(() => {
+    if (globeEl.current) {
+       globeEl.current.pointOfView({ lat: 39.8, lng: -98.5, altitude: 1.5 });
+    }
+  }, []);
+
+  // Transform markers for html elements
+  const gData = places.map(p => ({
+    lat: p.lat,
+    lng: p.lng,
+    name: p.name,
+    color: '#fce81e',
+  }));
+
+  const arcsData = showRoutes ? routes.map(r => ({
+    startLat: r.startLat,
+    startLng: r.startLng,
+    endLat: r.endLat,
+    endLng: r.endLng,
+    color: ['rgba(253, 224, 27, 0)', '#fde01b'],
+  })) : [];
+
+  return (
+    <div className="absolute inset-0 globe-container z-0" style={{ cursor: 'inherit' }}>
+      <Globe
+        ref={globeEl}
+        width={dimensions.width}
+        height={dimensions.height}
+        globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
+        bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
+        backgroundColor="rgba(0,0,0,0)"
+        showGraticules={false}
+        showAtmosphere={true}
+        atmosphereColor="#3a6bf0"
+        atmosphereAltitude={0.12}
+        polygonsData={countries.features}
+        polygonAltitude={(d: any) => (hoverD !== null && d === hoverD ? 0.012 : 0.005)}
+        polygonCapColor={(d: any) => (hoverD !== null && d === hoverD ? 'rgba(253, 224, 27, 0.35)' : 'rgba(255, 255, 255, 0.0)')}
+        polygonSideColor={() => 'rgba(8, 13, 25, 0)'}
+        polygonStrokeColor={() => 'rgba(255, 255, 255, 0.25)'}
+        polygonsTransitionDuration={300}
+        onPolygonHover={setHoverD}
+        polygonLabel={(d: any) => `
+          <div class="bg-brand-navy border border-[#224099] text-white rounded-md px-2 py-1 shadow-lg text-xs font-sans pointer-events-none">
+            ${d.properties.name} (${d.properties.admin})
+          </div>
+        `}
+        onPolygonClick={(d: any) => {
+          const center = getPolygonCenter(d);
+          if (globeEl.current) {
+            globeEl.current.pointOfView({ lat: center.lat, lng: center.lng, altitude: 0.8 }, 1000);
+          }
+        }}
+        htmlElementsData={gData}
+        htmlLat="lat"
+        htmlLng="lng"
+        htmlElement={(d: any) => {
+          const el = document.createElement('div');
+          el.innerHTML = `
+            <div class="bg-brand-yellow rounded-sm p-[2px] shadow-lg flex items-center justify-center transform -translate-x-1/2 -translate-y-1/2 cursor-pointer hover:scale-125 transition-transform border border-black">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#080d19" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-right"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+            </div>
+          `;
+          el.style.pointerEvents = 'auto';
+          el.onclick = () => {
+             console.log('Selected Location:', d.name);
+             if (globeEl.current) {
+               globeEl.current.pointOfView({ lat: d.lat, lng: d.lng, altitude: 0.5 }, 1000);
+             }
+          };
+          return el;
+        }}
+        arcsData={arcsData}
+        arcStartLat="startLat"
+        arcStartLng="startLng"
+        arcEndLat="endLat"
+        arcEndLng="endLng"
+        arcColor={(d: any) => d.color}
+        arcDashLength={0.4}
+        arcDashGap={0.2}
+        arcDashAnimateTime={1500}
+        arcStroke={1}
+      />
+    </div>
+  );
+}
