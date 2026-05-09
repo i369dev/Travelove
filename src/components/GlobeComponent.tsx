@@ -12,16 +12,6 @@ export function GlobeComponent({ autoRotate, showRoutes }: GlobeComponentProps) 
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [countries, setCountries] = useState<any>({ features: [] });
   const [hoverD, setHoverD] = useState<any>();
-  const [isRotating, setIsRotating] = useState(false);
-  const rotateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleInteraction = () => {
-    setIsRotating(true);
-    if (rotateTimeoutRef.current) clearTimeout(rotateTimeoutRef.current);
-    rotateTimeoutRef.current = setTimeout(() => {
-      setIsRotating(false);
-    }, 150);
-  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -91,18 +81,12 @@ export function GlobeComponent({ autoRotate, showRoutes }: GlobeComponentProps) 
         atmosphereColor="#3a6bf0"
         atmosphereAltitude={0.12}
         polygonsData={countries.features}
-        polygonAltitude={() => 0.001}
-        polygonCapColor={(d: any) => (d === hoverD ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0)')}
-        polygonSideColor={() => 'rgba(0, 0, 0, 0)'}
-        polygonStrokeColor={() => 'rgba(0, 0, 0, 0)'}
+        polygonAltitude={(d: any) => (d === hoverD ? 0.015 : 0.01)}
+        polygonCapColor={(d: any) => (hoverD !== null && d === hoverD ? 'rgba(253, 224, 27, 0.35)' : 'rgba(255, 255, 255, 0.0)')}
+        polygonSideColor={() => 'rgba(8, 13, 25, 0)'}
+        polygonStrokeColor={() => 'rgba(255, 255, 255, 0.25)'}
         polygonsTransitionDuration={0}
-        onPolygonHover={(d: any) => {
-          if (!isRotating) {
-            setHoverD(d);
-          }
-        }}
-        onZoom={handleInteraction}
-        onPovChanged={handleInteraction}
+        onPolygonHover={setHoverD}
         polygonLabel={(d: any) => `
           <div class="bg-brand-navy border border-[#224099] text-white rounded-md px-2 py-1 shadow-lg text-xs font-sans pointer-events-none">
             ${d.properties.NAME}
