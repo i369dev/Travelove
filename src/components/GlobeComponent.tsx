@@ -21,49 +21,17 @@ export function GlobeComponent({ autoRotate, showRoutes }: GlobeComponentProps) 
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const getPolygonCenter = (polygon: any) => {
-    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-    
-    const extractCoords = (coords: any[]) => {
-      coords.forEach(coord => {
-        if (typeof coord[0] === 'number') {
-          minLng = Math.min(minLng, coord[0]);
-          maxLng = Math.max(maxLng, coord[0]);
-          minLat = Math.min(minLat, coord[1]);
-          maxLat = Math.max(maxLat, coord[1]);
-        } else {
-          extractCoords(coord);
-        }
-      });
-    };
-    
-    if (polygon.geometry && polygon.geometry.coordinates) {
-      extractCoords(polygon.geometry.coordinates);
-    }
-    
-    return {
-      lat: (minLat + maxLat) / 2,
-      lng: (minLng + maxLng) / 2,
-      lonSpan: maxLng - minLng
-    };
-  };
-
   useEffect(() => {
-    // Load high-quality GeoJSON for administrative regions (states/provinces)
-    fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson')
+    // Load medium-resolution GeoJSON for country borders to fix lag and gaps
+    fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson')
       .then(res => res.json())
-      .then(statesData => {
-        const filteredStates = statesData.features.filter(
-          (d: any) => {
-            const center = getPolygonCenter(d);
-            // Filter out regions that span too much to avoid rendering glitches
-            return d.properties.admin !== 'Antarctica' &&
-                   center.lonSpan < 300;
-          }
-        ).map((f: any) => ({ ...f, isState: true }));
+      .then(countriesData => {
+        const filteredCountries = countriesData.features
+          .filter((d: any) => d.properties.NAME !== 'Antarctica')
+          .map((f: any) => ({ ...f, isCountry: true }));
         
         setCountries({
-          features: filteredStates
+          features: filteredCountries
         });
       });
   }, []);
@@ -113,21 +81,23 @@ export function GlobeComponent({ autoRotate, showRoutes }: GlobeComponentProps) 
         atmosphereColor="#3a6bf0"
         atmosphereAltitude={0.12}
         polygonsData={countries.features}
-        polygonAltitude={(d: any) => (hoverD !== null && d === hoverD ? 0.012 : 0.005)}
+        polygonAltitude={(d: any) => (d === hoverD ? 0.015 : 0.01)}
         polygonCapColor={(d: any) => (hoverD !== null && d === hoverD ? 'rgba(253, 224, 27, 0.35)' : 'rgba(255, 255, 255, 0.0)')}
         polygonSideColor={() => 'rgba(8, 13, 25, 0)'}
         polygonStrokeColor={() => 'rgba(255, 255, 255, 0.25)'}
-        polygonsTransitionDuration={300}
+        polygonsTransitionDuration={0}
         onPolygonHover={setHoverD}
         polygonLabel={(d: any) => `
           <div class="bg-brand-navy border border-[#224099] text-white rounded-md px-2 py-1 shadow-lg text-xs font-sans pointer-events-none">
-            ${d.properties.name} (${d.properties.admin})
+            ${d.properties.NAME}
           </div>
         `}
         onPolygonClick={(d: any) => {
-          const center = getPolygonCenter(d);
           if (globeEl.current) {
-            globeEl.current.pointOfView({ lat: center.lat, lng: center.lng, altitude: 0.8 }, 1000);
+            // Use standard label coordinates from Natural Earth dataset for precise centering
+            const lat = d.properties.LABEL_Y || (d.bbox ? (d.bbox[1] + d.bbox[3]) / 2 : 0);
+            const lng = d.properties.LABEL_X || (d.bbox ? (d.bbox[0] + d.bbox[2]) / 2 : 0);
+            globeEl.current.pointOfView({ lat, lng, altitude: 0.8 }, 1000);
           }
         }}
         htmlElementsData={gData}
